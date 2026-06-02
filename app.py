@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 import os
 import re
@@ -105,13 +106,15 @@ COLUMN_ALIASES = {
     "cpf":              ["cpf", "documento", "doc", "cpf/cnpj"],
     "name":             ["nome", "name", "aluno", "nome_aluno", "nome do aluno"],
     "student_id":       ["codigo_aluno", "id", "matricula", "codigo", "ra", "registro"],
-    "course":           ["nome_do_curso", "curso", "course", "disciplina"],
+    "course":           ["nome_do_curso", "nome_curso", "curso", "course", "disciplina"],
     "enrollment_date":  ["data_matricula", "dt_matricula", "data de matricula", "data_inicio"],
-    "inscription_date": ["data_da_inscricao", "data_inscricao", "data da inscricao"],
-    "polo":             ["nome_do_polo", "polo", "local_de_inscricao"],
+    "inscription_date": ["data_da_inscricao", "data_inscricao", "data da inscricao",
+                         "data_pre_inscricao", "data"],
+    "polo":             ["nome_do_polo", "nome_polo", "polo", "local_de_inscricao",
+                         "local_da_inscricao"],
     "turno":            ["turno"],
     "matriculou":       ["matriculou"],
-    "tipo_inscricao":   ["tipo_da_inscricao", "tipo_inscricao"],
+    "tipo_inscricao":   ["tipo_da_inscricao", "tipo_inscricao", "tipo"],
     "phone":            ["telefone", "fone", "tel", "phone", "telefone_fixo", "tel_fixo"],
     "cellphone":        ["celular", "cell", "cel", "mobile", "telefone_celular", "tel_celular"],
 }
@@ -190,10 +193,17 @@ def detect_columns(df) -> dict:
 
 
 def mask_cpf(cpf: str) -> str:
+    if not cpf or str(cpf).startswith("LEAD_"):
+        return "—"
     digits = "".join(filter(str.isdigit, str(cpf)))
     if len(digits) == 11:
         return f"{digits[:3]}.***.***-{digits[9:11]}"
     return cpf[:3] + "***" + cpf[-2:] if len(cpf) > 5 else cpf
+
+
+def _gen_lead_id(name: str, inscription_date: str, course: str) -> str:
+    key = f"{name.lower().strip()}|{inscription_date}|{course.lower().strip()}"
+    return "LEAD_" + hashlib.md5(key.encode()).hexdigest()[:12].upper()
 
 
 def allowed_file(filename: str) -> bool:
@@ -219,6 +229,17 @@ def _clean(val) -> str:
 
 def _normalize_date(val: str) -> str:
     s = _clean(val)
+    if not s:
+        return ""
+    # Brazilian format DD/MM/YYYY (with optional time)
+    parts = s.replace(" ", "/").split("/")
+    if len(parts) >= 3 and len(parts[2]) >= 4 and not parts[0].isdigit() == False:
+        try:
+            day, month, year = parts[0], parts[1], parts[2][:4]
+            if int(day) <= 31 and int(month) <= 12:
+                return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+        except (ValueError, IndexError):
+            pass
     return s[:10] if len(s) >= 10 else s
 
 
@@ -369,24 +390,35 @@ def parse_csv(filepath: str) -> tuple[list[dict], str | None]:
     df.columns = [c.strip() for c in df.columns]
     col = detect_columns(df)
 
-    if not col["cpf"]:
-        return [], "Coluna de CPF não encontrada. O arquivo deve ter uma coluna 'CPF', 'Documento' ou similar."
     if not col["name"]:
         return [], "Coluna de Nome não encontrada. O arquivo deve ter uma coluna 'Nome', 'Aluno' ou similar."
 
     students = []
     for _, row in df.iterrows():
-        cpf = "".join(filter(str.isdigit, _clean(row[col["cpf"]])))
-        if not cpf:
+        name = _clean(row[col["name"]]) if col["name"] else ""
+        if not name:
             continue
+
+        # CPF is optional — generate a deterministic ID when absent
+        if col["cpf"]:
+            cpf = "".join(filter(str.isdigit, _clean(row[col["cpf"]])))
+        else:
+            cpf = ""
+
+        inscription_date = _normalize_date(row[col["inscription_date"]]) if col["inscription_date"] else ""
+        course = _clean(row[col["course"]]) if col["course"] else ""
+
+        if not cpf:
+            cpf = _gen_lead_id(name, inscription_date, course)
+
         raw_row = {c: _clean(str(row[c])) for c in df.columns}
         students.append({
             "cpf":              cpf,
-            "name":             _clean(row[col["name"]]) if col["name"] else "",
+            "name":             name,
             "student_id":       _clean(row[col["student_id"]]) if col["student_id"] else "",
-            "course":           _clean(row[col["course"]]) if col["course"] else "",
+            "course":           course,
             "enrollment_date":  _normalize_date(row[col["enrollment_date"]]) if col["enrollment_date"] else "",
-            "inscription_date": _normalize_date(row[col["inscription_date"]]) if col["inscription_date"] else "",
+            "inscription_date": inscription_date,
             "polo":             _clean(row[col["polo"]]) if col["polo"] else "",
             "turno":            _clean(row[col["turno"]]) if col["turno"] else "",
             "matriculou":       _clean(row[col["matriculou"]]) if col["matriculou"] else "",
@@ -450,7 +482,7 @@ def setup():
                                    "Conta de administrador criada na primeira execução")
             flash("Conta de administrador criada com sucesso!", "success")
             return redirect(url_for("index"))
-    return render_template("setup.html")
+    return render_template("configuracao.html")
 
 
 # ── USER MANAGEMENT ROUTES ────────────────────────────────────────────────────
@@ -459,7 +491,7 @@ def setup():
 @admin_required
 def users():
     all_users = database.get_all_users()
-    return render_template("users.html", users=all_users)
+    return render_template("usuarios.html", users=all_users)
 
 
 @app.route("/users/add", methods=["POST"])
@@ -555,7 +587,7 @@ def change_user_password(user_id):
 @admin_required
 def audit_log():
     logs = database.get_audit_logs(500)
-    return render_template("audit.html", logs=logs)
+    return render_template("auditoria.html", logs=logs)
 
 
 def _extract_contacts_from_raw(raw_json: str) -> tuple[str, str]:
@@ -700,7 +732,7 @@ def report(upload_id):
         {**dict(s), "cpf_masked": mask_cpf(s["cpf"])}
         for s in new_students
     ]
-    return render_template("report.html", upload=upload, students=students_display)
+    return render_template("relatorio.html", upload=upload, students=students_display)
 
 
 @app.route("/students")
@@ -737,7 +769,7 @@ def students():
         for s in rows
     ]
     return render_template(
-        "students.html",
+        "leads.html",
         students=students_display,
         filters=filters,
         active_count=len(active),
@@ -751,7 +783,7 @@ def students():
 @app.route("/history")
 def history():
     uploads = database.get_all_uploads_unified(100)
-    return render_template("history.html", uploads=uploads)
+    return render_template("historico.html", uploads=uploads)
 
 
 @app.route("/enrolled")
@@ -801,7 +833,7 @@ def enrolled():
                 quick_filter = "inadimplentes"
 
     return render_template(
-        "enrolled.html",
+        "alunos.html",
         students=rows,
         filters=filters,
         active_count=len(active),
@@ -874,7 +906,7 @@ def payments():
     options = database.get_payment_filter_options()
 
     return render_template(
-        "payments.html",
+        "mensalidades.html",
         payments=rows,
         filters=filters,
         active_count=len(active),
@@ -925,7 +957,7 @@ def student_detail(cpf):
         return redirect(url_for("students"))
     notes = database.get_notes("student", cpf)
     return render_template(
-        "student_detail.html",
+        "detalhe_lead.html",
         student={**dict(student), "cpf_masked": mask_cpf(student["cpf"])},
         notes=notes,
     )
@@ -950,7 +982,7 @@ def enrolled_student_detail(code):
         return redirect(url_for("enrolled"))
     notes = database.get_notes("enrolled", code)
     return render_template(
-        "enrolled_detail.html",
+        "detalhe_aluno.html",
         student_name=enrollments[0]["student_name"],
         student_code=code,
         enrollments=enrollments,

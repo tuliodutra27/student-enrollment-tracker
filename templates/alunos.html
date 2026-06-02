@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Alunos Matriculados{% endblock %}
+{% block title %}Alunos{% endblock %}
 
 {% block content %}
 
 {# ── CABEÇALHO ──────────────────────────────────────────────────────── #}
 <div class="d-flex align-items-center mb-3 gap-2 flex-wrap">
   <div class="me-auto">
-    <h4 class="mb-0">Alunos Matriculados</h4>
+    <h4 class="mb-0">Alunos</h4>
     <p class="text-muted small mb-0">Importe o arquivo <strong>alunos-total.csv</strong> exportado do sistema da faculdade.</p>
   </div>
   {% if current_user.is_admin %}
