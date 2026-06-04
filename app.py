@@ -117,6 +117,7 @@ COLUMN_ALIASES = {
     "tipo_inscricao":   ["tipo_da_inscricao", "tipo_inscricao", "tipo"],
     "phone":            ["telefone", "fone", "tel", "phone", "telefone_fixo", "tel_fixo"],
     "cellphone":        ["celular", "cell", "cel", "mobile", "telefone_celular", "tel_celular"],
+    "email":            ["email", "e-mail", "e_mail", "email_aluno"],
 }
 
 
@@ -425,6 +426,7 @@ def parse_csv(filepath: str) -> tuple[list[dict], str | None]:
             "tipo_inscricao":   _clean(row[col["tipo_inscricao"]]) if col["tipo_inscricao"] else "",
             "phone":            _clean(row[col["phone"]]) if col["phone"] else "",
             "cellphone":        _clean(row[col["cellphone"]]) if col["cellphone"] else "",
+            "email":            _clean(row[col["email"]]) if col["email"] else "",
             "raw_data":         json.dumps(raw_row, ensure_ascii=False),
         })
     return students, None
@@ -961,6 +963,53 @@ def student_detail(cpf):
         student={**dict(student), "cpf_masked": mask_cpf(student["cpf"])},
         notes=notes,
     )
+
+
+@app.route("/student/<cpf>/edit", methods=["POST"])
+def edit_student(cpf):
+    student = database.get_student(cpf)
+    if not student:
+        flash("Lead não encontrado.", "danger")
+        return redirect(url_for("students"))
+
+    EDITABLE = ["name", "phone", "cellphone", "email", "course", "polo", "turno",
+                "tipo_inscricao", "matriculou", "inscription_date", "enrollment_date"]
+
+    fields = {}
+    for field in EDITABLE:
+        new_val = request.form.get(field, "").strip()
+        old_val = (student[field] or "")
+        if new_val != old_val:
+            fields[field] = new_val
+
+    # CPF change — only allowed when current ID is synthetic or a valid 11-digit CPF edit
+    new_cpf_raw = request.form.get("cpf_edit", "").strip()
+    new_cpf_digits = "".join(c for c in new_cpf_raw if c.isdigit())
+    if new_cpf_digits and new_cpf_digits != cpf:
+        if len(new_cpf_digits) != 11:
+            flash("CPF inválido. Informe os 11 dígitos.", "warning")
+            return redirect(url_for("student_detail", cpf=cpf))
+        if database.get_student(new_cpf_digits):
+            flash("Esse CPF já está cadastrado para outro lead.", "danger")
+            return redirect(url_for("student_detail", cpf=cpf))
+        fields["cpf"] = new_cpf_digits
+
+    if not fields:
+        flash("Nenhuma alteração detectada.", "info")
+        return redirect(url_for("student_detail", cpf=cpf))
+
+    changes = []
+    for k, v in fields.items():
+        old_v = cpf if k == "cpf" else (student[k] or "")
+        changes.append(f"{k}: '{old_v}' → '{v}'")
+
+    username = session.get("username", "")
+    final_cpf = database.update_student(cpf, dict(fields))
+    database.add_audit_log(username, request.remote_addr,
+                           "edit_lead",
+                           f"CPF: {cpf[:3]}*** | " + " | ".join(changes))
+    flash("Dados atualizados com sucesso.", "success")
+    return redirect(url_for("student_detail", cpf=final_cpf))
 
 
 @app.route("/student/<cpf>/note", methods=["POST"])

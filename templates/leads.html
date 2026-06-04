@@ -239,9 +239,9 @@
                 <td class="text-center">
                   {% if s.matriculou == 'S' %}
                     <span class="badge bg-success">Sim</span>
-                  {% elif s.matriculou == 'N' %}
+                  {% else %}
                     <span class="badge bg-secondary">Não</span>
-                  {% else %}—{% endif %}
+                  {% endif %}
                 </td>
                 <td class="small text-muted">{{ s.tipo_inscricao or '—' }}</td>
                 <td class="small">{{ s.inscription_date | br_d }}</td>

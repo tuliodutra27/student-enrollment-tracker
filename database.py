@@ -107,6 +107,7 @@ def _migrate(conn):
         ("raw_data",         "TEXT"),
         ("contacted_at",     "TEXT"),
         ("contacted_by",     "TEXT"),
+        ("email",            "TEXT"),
     ]
     existing = {row[1] for row in conn.execute("PRAGMA table_info(students)")}
     for col, typ in new_cols:
@@ -224,12 +225,12 @@ def insert_new_students(students: list[dict], upload_id: int):
             """INSERT OR IGNORE INTO students
                (cpf, name, student_id, course, enrollment_date,
                 inscription_date, polo, turno, matriculou, tipo_inscricao,
-                phone, cellphone, raw_data, first_upload_id)
+                phone, cellphone, email, raw_data, first_upload_id)
                VALUES
                (:cpf,:name,:student_id,:course,:enrollment_date,
                 :inscription_date,:polo,:turno,:matriculou,:tipo_inscricao,
-                :phone,:cellphone,:raw_data,:first_upload_id)""",
-            [{**s, "first_upload_id": upload_id} for s in students],
+                :phone,:cellphone,:email,:raw_data,:first_upload_id)""",
+            [{**s, "first_upload_id": upload_id, "email": s.get("email", "")} for s in students],
         )
 
 
@@ -292,6 +293,33 @@ def get_filter_options():
         }
 
 
+def get_student(cpf: str):
+    with get_connection() as conn:
+        return conn.execute("SELECT * FROM students WHERE cpf=?", (cpf,)).fetchone()
+
+
+def update_student(old_cpf: str, fields: dict) -> str:
+    """Update editable student fields. Returns final CPF (may change if CPF was updated)."""
+    new_cpf = fields.pop("cpf", None)
+    update_fields = {k: v for k, v in fields.items()}
+
+    with get_connection() as conn:
+        if update_fields:
+            set_clause = ", ".join(f"{k}=?" for k in update_fields)
+            conn.execute(
+                f"UPDATE students SET {set_clause} WHERE cpf=?",
+                list(update_fields.values()) + [old_cpf],
+            )
+        if new_cpf and new_cpf != old_cpf:
+            conn.execute("UPDATE students SET cpf=? WHERE cpf=?", (new_cpf, old_cpf))
+            conn.execute(
+                "UPDATE notes SET entity_id=? WHERE entity_type='student' AND entity_id=?",
+                (new_cpf, old_cpf),
+            )
+            return new_cpf
+    return old_cpf
+
+
 def set_student_contacted(cpf: str, username: str):
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
@@ -337,9 +365,10 @@ def get_students_filtered(nome=None, cpf=None, course=None, polo=None, turno=Non
     if turno:
         conditions.append("turno = ?")
         params.append(turno)
-    if matriculou:
-        conditions.append("matriculou = ?")
-        params.append(matriculou)
+    if matriculou == "S":
+        conditions.append("matriculou = 'S'")
+    elif matriculou == "N":
+        conditions.append("(matriculou = 'N' OR matriculou IS NULL OR matriculou = '')")
     if tipo:
         conditions.append("tipo_inscricao = ?")
         params.append(tipo)
@@ -680,11 +709,6 @@ def bulk_update_raw_data(updates: list[dict]):
             "UPDATE students SET raw_data=? WHERE cpf=? AND (raw_data IS NULL OR raw_data = '')",
             [(u["raw_data"], u["cpf"]) for u in updates],
         )
-
-
-def get_student(cpf: str):
-    with get_connection() as conn:
-        return conn.execute("SELECT * FROM students WHERE cpf=?", (cpf,)).fetchone()
 
 
 def get_enrolled_by_code(code: str):

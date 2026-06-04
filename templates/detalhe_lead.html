@@ -20,20 +20,26 @@
 
 <div class="row g-4">
 
-  {# ── DADOS DO ALUNO ─────────────────────────────────────────── #}
+  {# ── DADOS DO LEAD ────────────────────────────────────────────── #}
   <div class="col-lg-5">
-    <div class="card h-100">
-      <div class="card-header py-2 fw-semibold small">
-        <i class="bi bi-person-lines-fill me-1"></i>Dados do Aluno
+
+    {# Visualização dos dados #}
+    <div class="card mb-3">
+      <div class="card-header py-2 d-flex align-items-center justify-content-between">
+        <span class="fw-semibold small"><i class="bi bi-person-lines-fill me-1"></i>Dados do Lead</span>
+        <button class="btn btn-sm btn-outline-primary py-0 px-2" type="button"
+                data-bs-toggle="collapse" data-bs-target="#editPanel" aria-expanded="false">
+          <i class="bi bi-pencil me-1"></i>Editar
+        </button>
       </div>
       <div class="card-body p-0">
         <table class="table table-sm mb-0">
           <tbody>
             <tr>
-              <th class="text-muted small ps-3" style="width:40%">CPF</th>
+              <th class="text-muted small ps-3" style="width:42%">CPF</th>
               <td class="font-monospace small">
                 {% if student.cpf_masked == '—' %}
-                  <span class="text-muted">—</span>
+                  <span class="text-muted fst-italic">Não informado</span>
                 {% else %}
                   <span id="cpfDisplay">{{ student.cpf_masked }}</span>
                   <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1"
@@ -42,6 +48,10 @@
                   </button>
                 {% endif %}
               </td>
+            </tr>
+            <tr>
+              <th class="text-muted small ps-3">Nome</th>
+              <td class="small fw-semibold">{{ student.name or '—' }}</td>
             </tr>
             <tr>
               <th class="text-muted small ps-3">ID / Matrícula</th>
@@ -71,6 +81,16 @@
             <tr>
               <th class="text-muted small ps-3">Tipo de inscrição</th>
               <td class="small">{{ student.tipo_inscricao or '—' }}</td>
+            </tr>
+            <tr>
+              <th class="text-muted small ps-3">Matriculado</th>
+              <td class="small">
+                {% if student.matriculou == 'S' %}
+                  <span class="badge bg-success">Sim</span>
+                {% else %}
+                  <span class="badge bg-secondary">Não</span>
+                {% endif %}
+              </td>
             </tr>
             <tr>
               <th class="text-muted small ps-3">Data de inscrição</th>
@@ -111,6 +131,14 @@
               </td>
             </tr>
             <tr>
+              <th class="text-muted small ps-3">E-mail</th>
+              <td class="small">
+                {% if student.email %}
+                  {{ student.email | mask_email }}
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+            <tr>
               <th class="text-muted small ps-3">Tratativa</th>
               <td class="small">
                 {% if student.contacted_at %}
@@ -133,6 +161,115 @@
         </table>
       </div>
     </div>
+
+    {# Painel de edição colapsável #}
+    <div class="collapse" id="editPanel">
+      <div class="card border-warning">
+        <div class="card-header py-2 fw-semibold small text-warning-emphasis bg-warning-subtle">
+          <i class="bi bi-pencil-square me-1"></i>Editar dados do lead
+        </div>
+        <div class="card-body p-3">
+          <form method="post" action="{{ url_for('edit_student', cpf=student.cpf) }}">
+
+            <div class="mb-2">
+              <label class="form-label small fw-semibold mb-1">Nome</label>
+              <input type="text" name="name" class="form-control form-control-sm"
+                     value="{{ student.name or '' }}">
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label small fw-semibold mb-1">CPF</label>
+              <input type="text" name="cpf_edit" class="form-control form-control-sm font-monospace"
+                     value="{{ student.cpf if not student.cpf.startswith('LEAD_') else '' }}"
+                     placeholder="000.000.000-00"
+                     {% if not student.cpf.startswith('LEAD_') %}title="CPF atual; altere apenas se houver erro de cadastro"{% endif %}>
+              <div class="form-text">Deixe em branco para não alterar.</div>
+            </div>
+
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <label class="form-label small fw-semibold mb-1">Telefone</label>
+                <input type="text" name="phone" class="form-control form-control-sm"
+                       value="{{ student.phone or '' }}" placeholder="(22) 3333-4444">
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-semibold mb-1">Celular</label>
+                <input type="text" name="cellphone" class="form-control form-control-sm"
+                       value="{{ student.cellphone or '' }}" placeholder="(22) 99999-8888">
+              </div>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label small fw-semibold mb-1">E-mail</label>
+              <input type="email" name="email" class="form-control form-control-sm"
+                     value="{{ student.email or '' }}" placeholder="email@exemplo.com">
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label small fw-semibold mb-1">Curso</label>
+              <input type="text" name="course" class="form-control form-control-sm"
+                     value="{{ student.course or '' }}">
+            </div>
+
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <label class="form-label small fw-semibold mb-1">Polo</label>
+                <input type="text" name="polo" class="form-control form-control-sm"
+                       value="{{ student.polo or '' }}">
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-semibold mb-1">Turno</label>
+                <select name="turno" class="form-select form-select-sm">
+                  <option value="">—</option>
+                  {% for t in ['Matutino', 'Vespertino', 'Noturno', 'EAD'] %}
+                  <option value="{{ t }}" {% if student.turno == t %}selected{% endif %}>{{ t }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <label class="form-label small fw-semibold mb-1">Tipo de inscrição</label>
+                <input type="text" name="tipo_inscricao" class="form-control form-control-sm"
+                       value="{{ student.tipo_inscricao or '' }}">
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-semibold mb-1">Matriculado</label>
+                <select name="matriculou" class="form-select form-select-sm">
+                  <option value="N" {% if student.matriculou != 'S' %}selected{% endif %}>Não</option>
+                  <option value="S" {% if student.matriculou == 'S' %}selected{% endif %}>Sim</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label small fw-semibold mb-1">Data de inscrição</label>
+                <input type="date" name="inscription_date" class="form-control form-control-sm"
+                       value="{{ student.inscription_date or '' }}">
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-semibold mb-1">Data de matrícula</label>
+                <input type="date" name="enrollment_date" class="form-control form-control-sm"
+                       value="{{ student.enrollment_date or '' }}">
+              </div>
+            </div>
+
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-warning btn-sm flex-grow-1">
+                <i class="bi bi-floppy me-1"></i>Salvar alterações
+              </button>
+              <button type="button" class="btn btn-outline-secondary btn-sm"
+                      data-bs-toggle="collapse" data-bs-target="#editPanel">
+                Cancelar
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   {# ── ANOTAÇÕES ──────────────────────────────────────────────── #}
@@ -148,11 +285,10 @@
       </div>
       <div class="card-body p-3">
 
-        {# Formulário de nova anotação #}
         <form method="post" action="{{ url_for('add_student_note', cpf=student.cpf) }}" class="mb-4">
           <label class="form-label small fw-semibold">Nova anotação</label>
           <textarea name="note" class="form-control form-control-sm mb-2"
-                    rows="3" placeholder="Digite uma observação sobre este aluno…"
+                    rows="3" placeholder="Digite uma observação sobre este lead…"
                     required></textarea>
           <div class="text-end">
             <button type="submit" class="btn btn-primary btn-sm">
@@ -206,12 +342,15 @@
   (function () {
     const masked = '{{ student.cpf_masked }}';
     const cpf    = '{{ student.cpf }}';
-    const full   = cpf.length === 11
+    const isSynthetic = cpf.startsWith('LEAD_');
+    if (isSynthetic) return;
+    const full = cpf.length === 11
       ? cpf.slice(0,3)+'.'+cpf.slice(3,6)+'.'+cpf.slice(6,9)+'-'+cpf.slice(9)
       : cpf;
     let visible = false;
     const display = document.getElementById('cpfDisplay');
     const btn     = document.getElementById('revealCpfBtn');
+    if (!display || !btn) return;
     btn.addEventListener('click', function () {
       visible = !visible;
       display.textContent = visible ? full : masked;
